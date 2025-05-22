@@ -5,3 +5,6 @@ create-migration:
 
 migrate-up:
 	migrate -path=internal/db/migrations -database="${DATABASE_URL}" -verbose up
+
+migrate-down:
+	migrate -path=internal/db/migrations -database="${DATABASE_URL}" -verbose down
