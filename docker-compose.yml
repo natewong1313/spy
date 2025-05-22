@@ -1,0 +1,14 @@
+version: '3.8'
+
+services:
+  db:
+    image: postgres
+    ports:
+      - 5432:5432
+    volumes:
+      - ~/apps/postgres:/var/lib/postgresql/data
+    restart: always
+    environment:
+      POSTGRES_DB: spydb
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: password
