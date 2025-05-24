@@ -16,8 +16,9 @@ func TestGreenhouse(t *testing.T) {
 		GreenhouseName: "stripe",
 	}
 	scraper := New(mockCompany)
-	err := scraper.Start()
+	jobs, err := scraper.Start()
 	if err != nil {
 		t.Errorf("unexpected error: %v", err)
 	}
+	_ = jobs
 }

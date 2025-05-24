@@ -1,6 +1,9 @@
 package queries
 
 import (
+	"context"
+
+	"github.com/jackc/pgx/v5"
 	"github.com/natewong1313/spy/internal/errors"
 	"github.com/natewong1313/spy/internal/models"
 )
@@ -10,14 +13,14 @@ const (
 	GetCompanyByNameQuery = "SELECT * FROM company WHERE name=$1"
 )
 
-func (q *QueryEngine) NewCompany(company models.Company) error {
-	_, err := q.db.Exec(NewCompanyQuery, company.Name, company.PlatformType, company.PlatformURL, company.CreatedAt, company.GreenhouseName)
+func NewCompany(company models.Company, db *pgx.Conn) error {
+	_, err := db.Exec(context.Background(), NewCompanyQuery, company.Name, company.PlatformType, company.PlatformURL, company.CreatedAt, company.GreenhouseName)
 	return err
 }
 
-func (q *QueryEngine) GetCompanyByName(name string) (models.Company, error) {
+func GetCompanyByName(name string, db *pgx.Conn) (models.Company, error) {
 	var company models.Company
-	if err := q.db.QueryRow(GetCompanyByNameQuery, name).Scan(&company.Name, &company.PlatformType, &company.PlatformURL, &company.CreatedAt, &company.GreenhouseName); err != nil {
+	if err := db.QueryRow(context.Background(), GetCompanyByNameQuery, name).Scan(&company.Name, &company.PlatformType, &company.PlatformURL, &company.CreatedAt, &company.GreenhouseName); err != nil {
 		return company, errors.Wrap(err, "query company by name")
 	}
 	return company, nil

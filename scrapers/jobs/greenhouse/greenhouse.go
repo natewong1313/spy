@@ -18,22 +18,19 @@ type GreenhouseScraper struct {
 }
 
 func New(company models.Company) *GreenhouseScraper {
-
 	return &GreenhouseScraper{company: company, client: &http.Client{}}
 }
 
 // should be ran as a go routine
-func (gs *GreenhouseScraper) Start() error {
+func (gs *GreenhouseScraper) Start() ([]models.Job, error) {
 	log.Printf("starting scrape job for %s", gs.company.Name)
 	departmentsResponse, err := gs.getDepartmentsData()
 	if err != nil {
-		return errors.Wrap(err, "getDepartmentsData")
+		return []models.Job{}, errors.Wrap(err, "getDepartmentsData")
 	}
 
 	jobs := gs.parseJobs(departmentsResponse)
-	fmt.Println(len(jobs))
-
-	return nil
+	return jobs, nil
 }
 
 // https://boards-api.greenhouse.io/v1/boards/{GREENHOUSE NAME}/departments/

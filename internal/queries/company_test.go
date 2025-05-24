@@ -14,7 +14,6 @@ func TestCompanyQueries(t *testing.T) {
 	if err != nil {
 		t.Errorf("unexpected error: %v", err)
 	}
-	q := New(db)
 	testCompany := models.Company{
 		Name:           "test",
 		PlatformType:   "greenhouse",
@@ -22,12 +21,12 @@ func TestCompanyQueries(t *testing.T) {
 		CreatedAt:      time.Now(),
 		GreenhouseName: "stripe",
 	}
-	err = q.NewCompany(testCompany)
+	err = NewCompany(testCompany, db)
 	if err != nil {
 		t.Errorf("unexpected error: %v", err)
 		return
 	}
-	company, err := q.GetCompanyByName("stripe")
+	company, err := GetCompanyByName("stripe", db)
 	if err != nil {
 		fmt.Println(err)
 	}
