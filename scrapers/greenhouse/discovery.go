@@ -27,13 +27,6 @@ func NewDiscoveryScraper() *DiscoveryScraper {
 }
 
 func (ds *DiscoveryScraper) Start() ([]models.Company, error) {
-	// originally was going to be recursive but it makes more sense to update db as we get results
-	// _, err := ds.getGoogleSearchResults()
-	// if err != nil {
-	// 	return errors.Wrap(err, "getGoogleSearchResults")
-	// }
-	// return nil
-
 	totalCompanies := []models.Company{}
 	for {
 		if ds.googleQueryURL == "" {
@@ -46,9 +39,9 @@ func (ds *DiscoveryScraper) Start() ([]models.Company, error) {
 			return totalCompanies, nil
 		}
 		log.Printf("parsed %d companies", len(companies))
-
 		// rate limiting
-		time.Sleep(5)
+		log.Println("sleeping...")
+		time.Sleep(5 * time.Second)
 	}
 }
 
@@ -196,6 +189,7 @@ func (ds *DiscoveryScraper) getGoogleSearchResults() ([]models.Company, error) {
 				continue
 			}
 		}
+		log.Printf("discovered %s", formattedCompanyName)
 
 		company := models.Company{
 			Name:           formattedCompanyName,
@@ -232,7 +226,6 @@ func (ds *DiscoveryScraper) getGoogleSearchResults() ([]models.Company, error) {
 
 // some search results show up as embeds so we need to go on the page itself to get the company name
 func (ds *DiscoveryScraper) getEmbedListingDetails(embedURL string) (string, string, error) {
-	log.Printf("embed url: %s", embedURL)
 	req, err := http.NewRequest("GET", embedURL, nil)
 	if err != nil {
 		return "", "", err

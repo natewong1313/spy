@@ -14,6 +14,7 @@ func main() {
 		panic(err)
 	}
 
+	// first we find new companies
 	discoveryWorker := greenhouse.NewDiscoveryScraper()
 	companies, err := discoveryWorker.Start()
 	if err != nil {

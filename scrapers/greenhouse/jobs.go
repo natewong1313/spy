@@ -17,7 +17,7 @@ type GreenhouseScraper struct {
 	client  *http.Client
 }
 
-func New(company models.Company) *GreenhouseScraper {
+func NewGreenhouseScraper(company models.Company) *GreenhouseScraper {
 	return &GreenhouseScraper{company: company, client: &http.Client{}}
 }
 

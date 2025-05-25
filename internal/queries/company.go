@@ -12,8 +12,9 @@ const (
 	AddCompaniesQuery = `INSERT INTO company (name, platform_type, platform_url, created_at, greenhouse_name)
 	VALUES (@name, @platform_type, @platform_url, @created_at, @greenhouse_name)
 	ON CONFLICT (name) DO UPDATE SET greenhouse_name=EXCLUDED.greenhouse_name, platform_type=EXCLUDED.platform_type, platform_url=EXCLUDED.platform_url;`
-	NewCompanyQuery       = "INSERT INTO company (name, platform_type, platform_url, created_at, greenhouse_name) VALUES ($1, $2, $3, $4, $5)"
-	GetCompanyByNameQuery = "SELECT * FROM company WHERE name=$1"
+	GetAllCompaniesQuery  = `SELECT * FROM company;`
+	NewCompanyQuery       = "INSERT INTO company (name, platform_type, platform_url, created_at, greenhouse_name) VALUES ($1, $2, $3, $4, $5);"
+	GetCompanyByNameQuery = "SELECT * FROM company WHERE name=$1;"
 )
 
 func AddCompanies(companies []models.Company, db *pgx.Conn) error {
