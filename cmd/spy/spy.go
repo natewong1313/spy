@@ -1,13 +1,11 @@
 package main
 
 import (
-	"fmt"
-	"time"
+	"log"
 
 	"github.com/natewong1313/spy/internal/db"
-	"github.com/natewong1313/spy/internal/models"
 	"github.com/natewong1313/spy/internal/queries"
-	"github.com/natewong1313/spy/scrapers/jobs/greenhouse"
+	"github.com/natewong1313/spy/scrapers/greenhouse"
 )
 
 func main() {
@@ -15,23 +13,26 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-	mockCompany := models.Company{
-		Name:           "Stripe",
-		PlatformType:   "greenday",
-		PlatformURL:    "https://stripe.com/",
-		CreatedAt:      time.Now(),
-		GreenhouseName: "stripe",
-	}
-	queries.NewCompany(mockCompany, db)
-	scraper := greenhouse.New(mockCompany)
-	jobs, err := scraper.Start()
+
+	discoveryWorker := greenhouse.NewDiscoveryScraper()
+	companies, err := discoveryWorker.Start()
 	if err != nil {
 		panic(err)
 	}
-	fmt.Println(jobs[0].Company)
-	err = queries.AddJobs(jobs, db)
-	if err != nil {
+	if err := queries.AddCompanies(companies, db); err != nil {
 		panic(err)
 	}
+	log.Printf("added %d companies", len(companies))
+
+	// scraper := greenhouse.New(mockCompany)
+	// jobs, err := scraper.Start()
+	// if err != nil {
+	// 	panic(err)
+	// }
+	// fmt.Println(jobs[0].Company)
+	// err = queries.AddJobs(jobs, db)
+	// if err != nil {
+	// 	panic(err)
+	// }
 
 }
