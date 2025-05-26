@@ -1,4 +1,4 @@
-package greenhouse
+package ashby
 
 import (
 	"context"
@@ -41,13 +41,13 @@ func Start(dbPool *pgxpool.Pool) {
 		logger.Info(fmt.Sprintf("added %d companies", len(companies)))
 	}
 
-	// get all companies in batches
+	// work through companies in batches
 	// lots of companies so we dont want to get all at once
 	var allCompanies []models.Company
 	page := 1
 	limit := 50
 	for {
-		companies, err := queries.GetPaginatedCompanies("greenhouse", page, limit, dbConn)
+		companies, err := queries.GetPaginatedCompanies("ashby", page, limit, dbConn)
 		if err != nil {
 			logger.Error("get companies", slog.Any("err", err))
 			return

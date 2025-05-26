@@ -2,7 +2,7 @@ package main
 
 import (
 	"github.com/natewong1313/spy/internal/db"
-	"github.com/natewong1313/spy/scrapers/greenhouse"
+	"github.com/natewong1313/spy/scrapers/ashby"
 )
 
 func main() {
@@ -12,6 +12,7 @@ func main() {
 	}
 	defer pool.Close()
 
-	greenhouse.Start(pool)
+	// greenhouse.Start(pool)
+	ashby.Start(pool)
 
 }

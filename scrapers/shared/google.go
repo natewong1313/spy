@@ -2,6 +2,7 @@ package shared
 
 import (
 	"fmt"
+	"io"
 	"net/http"
 
 	"github.com/natewong1313/spy/internal/errors"
@@ -39,6 +40,8 @@ func DoGoogleSearchRequest(queryURL string, client *http.Client) (*http.Response
 		return nil, errors.Wrap(err, "doRequest")
 	}
 	if resp.StatusCode != 200 {
+		body, _ := io.ReadAll(resp.Body)
+		fmt.Println(string(body))
 		resp.Body.Close()
 		return nil, fmt.Errorf("non 200 error code: %d", resp.StatusCode)
 	}

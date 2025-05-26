@@ -76,12 +76,12 @@ func (ds *DiscoveryScraper) getGoogleSearchResults() (companies []models.Company
 	}
 
 	container := doc.Find("body div:nth-child(1)")
-	pages := container.Find("a").Nodes
-
-	for _, page := range pages {
+	searchResults := container.Find("a").Nodes
+	// iterate through all search results
+	for _, searchResult := range searchResults {
 		// parse href
 		var href string
-		for _, attr := range page.Attr {
+		for _, attr := range searchResult.Attr {
 			if attr.Key == "href" {
 				href = attr.Val
 				break
