@@ -32,21 +32,19 @@ func NewJobsScraper(company models.Company) *GreenhouseScraper {
 }
 
 // should be ran as a go routine
-func (gs *GreenhouseScraper) Start() ([]models.Job, error) {
+func (gs *GreenhouseScraper) Start() (jobs []models.Job, err error) {
 	gs.logger.Info("starting scrape job")
 	departmentsResponse, err := gs.getDepartmentsData()
 	if err != nil {
-		return []models.Job{}, errors.Wrap(err, "getDepartmentsData")
+		return jobs, errors.Wrap(err, "getDepartmentsData")
 	}
 
-	jobs := gs.parseJobs(departmentsResponse)
+	jobs = gs.parseJobs(departmentsResponse)
 	return jobs, nil
 }
 
 // https://boards-api.greenhouse.io/v1/boards/{GREENHOUSE NAME}/departments/
-func (gs *GreenhouseScraper) getDepartmentsData() (DepartmentsResponse, error) {
-	var departments DepartmentsResponse
-
+func (gs *GreenhouseScraper) getDepartmentsData() (departments DepartmentsResponse, err error) {
 	gs.logger.Info("fetching departments api")
 	url := fmt.Sprintf("https://boards-api.greenhouse.io/v1/boards/%s/departments/", gs.company.GreenhouseName)
 	req, err := http.NewRequest("GET", url, nil)
@@ -88,8 +86,7 @@ func (gs *GreenhouseScraper) getDepartmentsData() (DepartmentsResponse, error) {
 }
 
 // jobs that are scraped come categorized by department but we want to put them into one big list
-func (gs *GreenhouseScraper) parseJobs(departments DepartmentsResponse) []models.Job {
-	var parsedJobs []models.Job
+func (gs *GreenhouseScraper) parseJobs(departments DepartmentsResponse) (parsedJobs []models.Job) {
 	for _, department := range departments.Departments {
 		for _, job := range department.Jobs {
 			parsedJobs = append(parsedJobs, models.Job{

@@ -43,8 +43,7 @@ func AddCompanies(companies []models.Company, db *pgxpool.Conn) error {
 	return nil
 }
 
-func GetPaginatedGreenhouseCompanies(page, limit int, db *pgxpool.Conn) ([]models.Company, error) {
-	var companies []models.Company
+func GetPaginatedGreenhouseCompanies(page, limit int, db *pgxpool.Conn) (companies []models.Company, err error) {
 	offset := (page - 1) * limit
 	rows, err := db.Query(context.Background(), GetGreenhouseCompaniesQuery, limit, offset)
 	if err != nil {
@@ -61,8 +60,7 @@ func GetPaginatedGreenhouseCompanies(page, limit int, db *pgxpool.Conn) ([]model
 	return companies, nil
 }
 
-func GetPaginatedCompanies(page, limit int, db *pgxpool.Conn) ([]models.Company, error) {
-	var companies []models.Company
+func GetPaginatedCompanies(page, limit int, db *pgxpool.Conn) (companies []models.Company, err error) {
 	offset := (page - 1) * limit
 	rows, err := db.Query(context.Background(), GetCompaniesQuery, limit, offset)
 	if err != nil {
@@ -90,8 +88,7 @@ func GetCompanyByName(name string, db *pgxpool.Conn) (models.Company, error) {
 }
 
 // utility function to colocate logic incase new fields are added to company
-func scanCompany(row pgx.Row) (models.Company, error) {
-	var company models.Company
+func scanCompany(row pgx.Row) (company models.Company, err error) {
 	if err := row.Scan(&company.Name, &company.PlatformType, &company.PlatformURL, &company.CreatedAt, &company.GreenhouseName); err != nil {
 		return company, errors.Wrap(err, "query company")
 	}

@@ -16,6 +16,7 @@ import (
 	"github.com/PuerkitoBio/goquery"
 	"github.com/natewong1313/spy/internal/errors"
 	"github.com/natewong1313/spy/internal/models"
+	"github.com/natewong1313/spy/scrapers/shared"
 )
 
 type DiscoveryScraper struct {
@@ -35,9 +36,8 @@ func NewDiscoveryScraper() *DiscoveryScraper {
 	return &DiscoveryScraper{logger: logger, client: &http.Client{}, googleQueryURL: getQueryURL()}
 }
 
-func (ds *DiscoveryScraper) Start() ([]models.Company, error) {
+func (ds *DiscoveryScraper) Start() (totalCompanies []models.Company, err error) {
 	ds.logger.Info("starting")
-	totalCompanies := []models.Company{}
 	for {
 		if ds.googleQueryURL == "" {
 			return totalCompanies, nil
@@ -61,93 +61,14 @@ func getQueryURL() string {
 	return fmt.Sprintf("https://www.google.com/search?q=site:boards.greenhouse.io+after:%d-%02d-%d", weekAgo.Year(), weekAgo.Month(), weekAgo.Day())
 }
 
-func (ds *DiscoveryScraper) getChallengePage() error {
-	req, err := http.NewRequest("GET", ds.googleQueryURL, nil)
-	if err != nil {
-		return errors.Wrap(err, "NewRequest")
-	}
-	req.Header.Set("User-Agent", "Mozilla/5.0 (X11; Linux x86_64; rv:138.0) Gecko/20100101 Firefox/138.0")
-	req.Header.Set("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
-	req.Header.Set("Accept-Language", "en-US,en;q=0.5")
-	// req.Header.Set("Accept-Encoding", "gzip, deflate, br, zstd")
-	req.Header.Set("DNT", "1")
-	req.Header.Set("Sec-GPC", "1")
-	req.Header.Set("Connection", "keep-alive")
-	req.Header.Set("Referer", "https://www.google.com/search?client=firefox-b-1-d&q=site%3Aboards.greenhouse.io+after%3A2025-05-17")
-	req.Header.Set("Upgrade-Insecure-Requests", "1")
-	req.Header.Set("Sec-Fetch-Dest", "document")
-	req.Header.Set("Sec-Fetch-Mode", "navigate")
-	req.Header.Set("Sec-Fetch-Site", "same-origin")
-	req.Header.Set("Priority", "u=0, i")
-	req.Header.Set("Pragma", "no-cache")
-	req.Header.Set("Cache-Control", "no-cache")
-	req.Header.Set("TE", "trailers")
-	resp, err := ds.client.Do(req)
-	if err != nil {
-		return errors.Wrap(err, "DoRequest")
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != 200 {
-		return fmt.Errorf("non 200 error code: %d", resp.StatusCode)
-	}
-	doc, err := goquery.NewDocumentFromReader(resp.Body)
-	if err != nil {
-		return errors.Wrap(err, "NewDocumentFromReader")
-	}
-	_ = doc
-	// nodes := doc.Find("a:contains('click here')").Nodes
-	// if len(nodes) != 1 {
-	// 	return fmt.Errorf("invalid num of nodes: %d", len(nodes))
-	// }
-	// var href string
-	// for _, attr := range nodes[0].Attr {
-	// 	if attr.Key == "href" {
-	// 		href = attr.Val
-	// 		break
-	// 	}
-	// }
-
-	return err
-}
-
-func (ds *DiscoveryScraper) getGoogleSearchResults() ([]models.Company, error) {
-	var companies []models.Company
-
+func (ds *DiscoveryScraper) getGoogleSearchResults() (companies []models.Company, err error) {
 	ds.logger.Info("fetching search results", slog.String("url", ds.googleQueryURL))
-	req, err := http.NewRequest("GET", ds.googleQueryURL, nil)
+
+	resp, err := shared.DoGoogleSearchRequest(ds.googleQueryURL, ds.client)
 	if err != nil {
-		return companies, errors.Wrap(err, "NewRequest")
-	}
-	req.Header.Set("accept", "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8")
-	req.Header.Set("accept-language", "en-US,en;q=0.5")
-	req.Header.Set("cache-control", "no-cache")
-	req.Header.Set("pragma", "no-cache")
-	req.Header.Set("priority", "u=0, i")
-	req.Header.Set("sec-ch-ua", `"Chromium";v="136", "Brave";v="136", "Not.A/Brand";v="99"`)
-	req.Header.Set("sec-ch-ua-arch", `"x86"`)
-	req.Header.Set("sec-ch-ua-bitness", `"64"`)
-	req.Header.Set("sec-ch-ua-full-version-list", `"Chromium";v="136.0.0.0", "Brave";v="136.0.0.0", "Not.A/Brand";v="99.0.0.0"`)
-	req.Header.Set("sec-ch-ua-mobile", "?0")
-	req.Header.Set("sec-ch-ua-model", `""`)
-	req.Header.Set("sec-ch-ua-platform", `"Linux"`)
-	req.Header.Set("sec-ch-ua-platform-version", `"6.14.6"`)
-	req.Header.Set("sec-ch-ua-wow64", "?0")
-	req.Header.Set("sec-fetch-dest", "document")
-	req.Header.Set("sec-fetch-mode", "navigate")
-	req.Header.Set("sec-fetch-site", "none")
-	req.Header.Set("sec-fetch-user", "?1")
-	req.Header.Set("sec-gpc", "1")
-	req.Header.Set("upgrade-insecure-requests", "1")
-	// req.Header.Set("user-agent", "Lynx/2.8.6rel.5 libwww-FM/2.14")
-	req.Header.Set("User-Agent", "Links (2.29; Linux 6.11.0-13-generic x86_64; GNU C 13.2; text)")
-	resp, err := ds.client.Do(req)
-	if err != nil {
-		return companies, errors.Wrap(err, "doRequest")
+		return companies, err
 	}
 	defer resp.Body.Close()
-	if resp.StatusCode != 200 {
-		return companies, fmt.Errorf("non 200 error code: %d", resp.StatusCode)
-	}
 
 	doc, err := goquery.NewDocumentFromReader(resp.Body)
 	if err != nil {
