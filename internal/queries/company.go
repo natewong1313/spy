@@ -12,9 +12,10 @@ const (
 	AddCompaniesQuery = `INSERT INTO company (name, platform_type, platform_url, created_at, greenhouse_name)
 	VALUES (@name, @platform_type, @platform_url, @created_at, @greenhouse_name)
 	ON CONFLICT (name) DO UPDATE SET greenhouse_name=EXCLUDED.greenhouse_name, platform_type=EXCLUDED.platform_type, platform_url=EXCLUDED.platform_url;`
-	GetAllCompaniesQuery  = `SELECT * FROM company;`
-	NewCompanyQuery       = "INSERT INTO company (name, platform_type, platform_url, created_at, greenhouse_name) VALUES ($1, $2, $3, $4, $5);"
-	GetCompanyByNameQuery = "SELECT * FROM company WHERE name=$1;"
+	GetCompaniesQuery           = `SELECT * FROM company LIMIT $1 OFFSET $2;`
+	GetGreenhouseCompaniesQuery = `SELECT * FROM company WHERE greenhouse_name <> '' LIMIT $1 OFFSET $2;`
+	NewCompanyQuery             = "INSERT INTO company (name, platform_type, platform_url, created_at, greenhouse_name) VALUES ($1, $2, $3, $4, $5);"
+	GetCompanyByNameQuery       = "SELECT * FROM company WHERE name=$1;"
 )
 
 func AddCompanies(companies []models.Company, db *pgx.Conn) error {
@@ -41,15 +42,57 @@ func AddCompanies(companies []models.Company, db *pgx.Conn) error {
 	return nil
 }
 
+func GetPaginatedGreenhouseCompanies(page, limit int, db *pgx.Conn) ([]models.Company, error) {
+	var companies []models.Company
+	offset := (page - 1) * limit
+	rows, err := db.Query(context.Background(), GetGreenhouseCompaniesQuery, limit, offset)
+	if err != nil {
+		return companies, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		company, err := scanCompany(rows)
+		if err != nil {
+			return companies, err
+		}
+		companies = append(companies, company)
+	}
+	return companies, nil
+}
+
+func GetPaginatedCompanies(page, limit int, db *pgx.Conn) ([]models.Company, error) {
+	var companies []models.Company
+	offset := (page - 1) * limit
+	rows, err := db.Query(context.Background(), GetCompaniesQuery, limit, offset)
+	if err != nil {
+		return companies, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		company, err := scanCompany(rows)
+		if err != nil {
+			return companies, err
+		}
+		companies = append(companies, company)
+	}
+	return companies, nil
+}
+
 func NewCompany(company models.Company, db *pgx.Conn) error {
 	_, err := db.Exec(context.Background(), NewCompanyQuery, company.Name, company.PlatformType, company.PlatformURL, company.CreatedAt, company.GreenhouseName)
 	return err
 }
 
 func GetCompanyByName(name string, db *pgx.Conn) (models.Company, error) {
+	row := db.QueryRow(context.Background(), GetCompanyByNameQuery, name)
+	return scanCompany(row)
+}
+
+// utility function to colocate logic incase new fields are added to company
+func scanCompany(row pgx.Row) (models.Company, error) {
 	var company models.Company
-	if err := db.QueryRow(context.Background(), GetCompanyByNameQuery, name).Scan(&company.Name, &company.PlatformType, &company.PlatformURL, &company.CreatedAt, &company.GreenhouseName); err != nil {
-		return company, errors.Wrap(err, "query company by name")
+	if err := row.Scan(&company.Name, &company.PlatformType, &company.PlatformURL, &company.CreatedAt, &company.GreenhouseName); err != nil {
+		return company, errors.Wrap(err, "query company")
 	}
 	return company, nil
 }

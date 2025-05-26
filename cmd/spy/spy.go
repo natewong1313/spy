@@ -4,6 +4,7 @@ import (
 	"log"
 
 	"github.com/natewong1313/spy/internal/db"
+	"github.com/natewong1313/spy/internal/models"
 	"github.com/natewong1313/spy/internal/queries"
 	"github.com/natewong1313/spy/scrapers/greenhouse"
 )
@@ -25,15 +26,31 @@ func main() {
 	}
 	log.Printf("added %d companies", len(companies))
 
-	// scraper := greenhouse.New(mockCompany)
-	// jobs, err := scraper.Start()
-	// if err != nil {
-	// 	panic(err)
-	// }
-	// fmt.Println(jobs[0].Company)
-	// err = queries.AddJobs(jobs, db)
-	// if err != nil {
-	// 	panic(err)
-	// }
+	// work through companies in batches
+	var allCompanies []models.Company
+	page := 1
+	limit := 50
+	for {
+		companies, err := queries.GetPaginatedCompanies(page, limit, db)
+		if err != nil {
+			panic(err)
+		}
+		allCompanies = append(allCompanies, companies...)
+		if len(companies) < limit {
+			break
+		}
+		page++
+	}
+
+	for _, company := range allCompanies {
+		jobs, err := greenhouse.NewJobsScraper(company).Start()
+		if err != nil {
+			log.Printf("unexpected error: %v", err)
+			continue
+		}
+		if err := queries.AddJobs(jobs, db); err != nil {
+			log.Printf("unexpected error: %v", err)
+		}
+	}
 
 }

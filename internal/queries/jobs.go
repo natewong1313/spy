@@ -2,6 +2,7 @@ package queries
 
 import (
 	"context"
+	"log"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/natewong1313/spy/internal/errors"
@@ -12,11 +13,16 @@ const (
 	AddJobsQuery = `INSERT INTO job (url, company, title, locations, updated_at, created_at)
 	VALUES (@url, @company, @title, @locations, @updated_at, @created_at)
 	ON CONFLICT (url) DO UPDATE SET locations=EXCLUDED.locations, updated_at=EXCLUDED.updated_at;`
-	DeleteOldJobsQuery = "DELETE FROM job WHERE url !=ALL($1);"
+	DeleteOldJobsQuery = "DELETE FROM job WHERE company=$1 AND url !=ALL($2);"
 )
 
 // adds new jobs to the database, updates existing, and deletes invalid ones
 func AddJobs(jobs []models.Job, db *pgx.Conn) error {
+	if len(jobs) == 0 {
+		return nil
+	}
+	company := jobs[0].Company
+
 	// store jobURLs during this loop for deletion purposes
 	jobURLs := make([]string, len(jobs))
 	batch := &pgx.Batch{}
@@ -36,17 +42,19 @@ func AddJobs(jobs []models.Job, db *pgx.Conn) error {
 	ctx := context.Background()
 	// lots of rows so we'll batch
 	results := db.SendBatch(ctx, batch)
-	for range jobs {
+	for i := range jobs {
 		_, err := results.Exec()
 		if err != nil {
 			results.Close()
+			log.Printf("err: %s : %s : %s", jobs[i].URL, jobs[i].Company, jobs[i].Title)
+			log.Println(jobs[i].Locations)
 			return errors.Wrap(err, "execAddJobsQuery")
 		}
 	}
 	results.Close()
 
 	// delete jobs that werent found during the scrape, which are probably expired/filled jobs
-	_, err := db.Exec(ctx, DeleteOldJobsQuery, jobURLs)
+	_, err := db.Exec(ctx, DeleteOldJobsQuery, company, jobURLs)
 	if err != nil {
 		return errors.Wrap(err, "deleteOldJobsQuery")
 	}
