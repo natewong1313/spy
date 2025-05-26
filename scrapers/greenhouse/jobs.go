@@ -4,8 +4,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log"
+	"log/slog"
 	"net/http"
+	"os"
 	"time"
 
 	"github.com/natewong1313/spy/internal/errors"
@@ -13,17 +14,26 @@ import (
 )
 
 type GreenhouseScraper struct {
+	logger  *slog.Logger
 	company models.Company
 	client  *http.Client
 }
 
 func NewJobsScraper(company models.Company) *GreenhouseScraper {
-	return &GreenhouseScraper{company: company, client: &http.Client{}}
+	attrs := []slog.Attr{
+		slog.String("site", "greenhouse"),
+		slog.String("service", "jobs"),
+		slog.String("company", company.Name),
+	}
+	handler := slog.NewTextHandler(os.Stdout, nil).WithAttrs(attrs)
+	logger := slog.New(handler)
+
+	return &GreenhouseScraper{logger: logger, company: company, client: &http.Client{}}
 }
 
 // should be ran as a go routine
 func (gs *GreenhouseScraper) Start() ([]models.Job, error) {
-	log.Printf("starting scrape job for %s", gs.company.Name)
+	gs.logger.Info("starting scrape job")
 	departmentsResponse, err := gs.getDepartmentsData()
 	if err != nil {
 		return []models.Job{}, errors.Wrap(err, "getDepartmentsData")
@@ -37,6 +47,7 @@ func (gs *GreenhouseScraper) Start() ([]models.Job, error) {
 func (gs *GreenhouseScraper) getDepartmentsData() (DepartmentsResponse, error) {
 	var departments DepartmentsResponse
 
+	gs.logger.Info("fetching departments api")
 	url := fmt.Sprintf("https://boards-api.greenhouse.io/v1/boards/%s/departments/", gs.company.GreenhouseName)
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
@@ -82,11 +93,10 @@ func (gs *GreenhouseScraper) parseJobs(departments DepartmentsResponse) []models
 	for _, department := range departments.Departments {
 		for _, job := range department.Jobs {
 			parsedJobs = append(parsedJobs, models.Job{
-				// TODO: dont add id yet, for duplicate jobs
+				URL:       job.AbsoluteURL,
 				Company:   job.CompanyName,
 				Title:     job.Title,
 				Locations: getLocationsFromRawJob(job),
-				URL:       job.AbsoluteURL,
 				UpdatedAt: job.UpdatedAt,
 				CreatedAt: time.Now(),
 			})
@@ -105,6 +115,5 @@ func getLocationsFromRawJob(rawJob job) []string {
 	if rawJob.Location.Name != "" {
 		return []string{rawJob.Location.Name}
 	}
-	log.Printf("no locations found for job: %s at %s", rawJob.Title, rawJob.CompanyName)
 	return []string{}
 }

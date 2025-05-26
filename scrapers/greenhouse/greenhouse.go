@@ -2,7 +2,9 @@ package greenhouse
 
 import (
 	"context"
-	"log"
+	"fmt"
+	"log/slog"
+	"os"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/natewong1313/spy/internal/models"
@@ -10,22 +12,33 @@ import (
 )
 
 func Start(dbPool *pgxpool.Pool) {
+	attrs := []slog.Attr{
+		slog.String("site", "greenhouse"),
+		slog.String("service", "master"),
+	}
+	handler := slog.NewTextHandler(os.Stdout, nil).WithAttrs(attrs)
+	logger := slog.New(handler)
+
 	// first search for any new companies
 	companies, err := NewDiscoveryScraper().Start()
 	if err != nil {
-		panic(err)
+		logger.Error("discovery scraper err", slog.Any("err", err))
+		// dont return for now
 	}
 
 	dbConn, err := dbPool.Acquire(context.Background())
 	if err != nil {
-		panic(err)
+		logger.Error("acquire pool", slog.Any("err", err))
+		return
 	}
 	defer dbConn.Release()
 
 	if err := queries.AddCompanies(companies, dbConn); err != nil {
-		panic(err)
+		logger.Error("add companies", slog.Any("err", err))
+		return
+	} else {
+		logger.Info(fmt.Sprintf("added %d companies", len(companies)))
 	}
-	log.Printf("added %d companies", len(companies))
 
 	// work through companies in batches
 	var allCompanies []models.Company
@@ -34,7 +47,8 @@ func Start(dbPool *pgxpool.Pool) {
 	for {
 		companies, err := queries.GetPaginatedCompanies(page, limit, dbConn)
 		if err != nil {
-			panic(err)
+			logger.Error("get companies", slog.Any("err", err))
+			return
 		}
 		allCompanies = append(allCompanies, companies...)
 		if len(companies) < limit {
@@ -46,11 +60,11 @@ func Start(dbPool *pgxpool.Pool) {
 	for _, company := range allCompanies {
 		jobs, err := NewJobsScraper(company).Start()
 		if err != nil {
-			log.Printf("unexpected error: %v", err)
+			logger.Error("unexpected err scraping jobs", slog.Any("err", err))
 			continue
 		}
 		if err := queries.AddJobs(jobs, dbConn); err != nil {
-			log.Printf("unexpected error: %v", err)
+			logger.Error("unexpected err adding jobs", slog.Any("err", err))
 		}
 	}
 }

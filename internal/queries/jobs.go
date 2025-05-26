@@ -2,7 +2,6 @@ package queries
 
 import (
 	"context"
-	"log"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -43,12 +42,10 @@ func AddJobs(jobs []models.Job, db *pgxpool.Conn) error {
 	ctx := context.Background()
 	// lots of rows so we'll batch
 	results := db.SendBatch(ctx, batch)
-	for i := range jobs {
+	for range jobs {
 		_, err := results.Exec()
 		if err != nil {
 			results.Close()
-			log.Printf("err: %s : %s : %s", jobs[i].URL, jobs[i].Company, jobs[i].Title)
-			log.Println(jobs[i].Locations)
 			return errors.Wrap(err, "execAddJobsQuery")
 		}
 	}

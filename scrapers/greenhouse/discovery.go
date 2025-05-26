@@ -4,7 +4,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log"
+	"os"
+
+	"log/slog"
 	"net/http"
 	"net/url"
 	"strings"
@@ -17,16 +19,24 @@ import (
 )
 
 type DiscoveryScraper struct {
+	logger         *slog.Logger
 	client         *http.Client
 	googleQueryURL string
 }
 
 func NewDiscoveryScraper() *DiscoveryScraper {
-	// jar, _ := cookiejar.New(nil)
-	return &DiscoveryScraper{client: &http.Client{}, googleQueryURL: getQueryURL()}
+	attrs := []slog.Attr{
+		slog.String("site", "greenhouse"),
+		slog.String("service", "discovery"),
+	}
+	handler := slog.NewTextHandler(os.Stdout, nil).WithAttrs(attrs)
+	logger := slog.New(handler)
+
+	return &DiscoveryScraper{logger: logger, client: &http.Client{}, googleQueryURL: getQueryURL()}
 }
 
 func (ds *DiscoveryScraper) Start() ([]models.Company, error) {
+	ds.logger.Info("starting")
 	totalCompanies := []models.Company{}
 	for {
 		if ds.googleQueryURL == "" {
@@ -35,12 +45,12 @@ func (ds *DiscoveryScraper) Start() ([]models.Company, error) {
 		companies, err := ds.getGoogleSearchResults()
 		totalCompanies = append(totalCompanies, companies...)
 		if err != nil {
-			log.Printf("%v", err)
+			ds.logger.Error("getGoogleSearchResults", slog.Any("err", err))
 			return totalCompanies, nil
 		}
-		log.Printf("parsed %d companies", len(companies))
+		ds.logger.Info(fmt.Sprintf("parsed %d companies", len(companies)))
 		// rate limiting
-		log.Println("sleeping...")
+		ds.logger.Debug("sleeping...")
 		time.Sleep(5 * time.Second)
 	}
 }
@@ -103,7 +113,7 @@ func (ds *DiscoveryScraper) getChallengePage() error {
 func (ds *DiscoveryScraper) getGoogleSearchResults() ([]models.Company, error) {
 	var companies []models.Company
 
-	log.Printf("requesting %s", ds.googleQueryURL)
+	ds.logger.Info("fetching search results", slog.String("url", ds.googleQueryURL))
 	req, err := http.NewRequest("GET", ds.googleQueryURL, nil)
 	if err != nil {
 		return companies, errors.Wrap(err, "NewRequest")
@@ -163,13 +173,13 @@ func (ds *DiscoveryScraper) getGoogleSearchResults() ([]models.Company, error) {
 		// /url?q=https://boards.greenhouse.io/cialfo&sa=U&ved=2ahUKEwj27LPx-r6NAxUm48kDHd3uOXYQFnoECAMQAg&usg=AOvVaw0LIFj2cF-uYpWMcHetb8ei
 		hrefURL, err := url.Parse(href)
 		if err != nil {
-			log.Printf("unexpected parse err: %v for url %s", err, href)
+			ds.logger.Error("unexpected url parse err", slog.Any("err", err), slog.String("url", href))
 			continue
 		}
 		// /coupang/jobs/6536235&sa=U&ved=2ahUKEwiIyszA_76NAxXQgFYBHfs1CTwQFnoECAoQAg&usg=AOvVaw33QLvcRWHJXhHWdKAkF_Ii
 		paths := strings.Split(hrefURL.Path, "/")
 		if len(paths) < 1 {
-			log.Printf("unexpected path length: %s", hrefURL.Path)
+			ds.logger.Error("unexpected path length", slog.String("path", hrefURL.Path))
 			continue
 		}
 		// strip params, edge case for some urls
@@ -179,17 +189,17 @@ func (ds *DiscoveryScraper) getGoogleSearchResults() ([]models.Company, error) {
 			decodedURL, _ := url.QueryUnescape(href)
 			companyName, formattedCompanyName, err = ds.getEmbedListingDetails(decodedURL)
 			if err != nil {
-				log.Printf("getEmbedListingDetails err: %v", err)
+				ds.logger.Error("getEmbedListingDetails", slog.Any("err", err))
 				continue
 			}
 		} else {
-			formattedCompanyName, err = getFormattedCompanyName(companyName)
+			formattedCompanyName, err = ds.getFormattedCompanyName(companyName)
 			if err != nil {
-				log.Printf("getFormattedCompanyName err: %v", err)
+				ds.logger.Error("getFormattedCompanyName", slog.Any("err", err))
 				continue
 			}
 		}
-		log.Printf("discovered %s", formattedCompanyName)
+		ds.logger.Info("discovered " + formattedCompanyName)
 
 		company := models.Company{
 			Name:           formattedCompanyName,
@@ -202,7 +212,7 @@ func (ds *DiscoveryScraper) getGoogleSearchResults() ([]models.Company, error) {
 	}
 	nextURL, err := parsePageButtons(doc)
 	if err != nil {
-		return companies, err
+		return companies, errors.Wrap(err, "parsePageButtons")
 	}
 
 	// end of results
@@ -212,20 +222,11 @@ func (ds *DiscoveryScraper) getGoogleSearchResults() ([]models.Company, error) {
 		ds.googleQueryURL = "https://www.google.com" + nextURL
 	}
 	return companies, nil
-
-	// // end of results
-	// if nextURL == "#" {
-	// 	return companies, nil
-	// } else {
-	// 	ds.googleQueryURL = "https://www.google.com" + nextURL
-	// 	// avoid rate limiting
-	// 	time.Sleep(5 * time.Second)
-	// 	return ds.getGoogleSearchResults()
-	// }
 }
 
 // some search results show up as embeds so we need to go on the page itself to get the company name
 func (ds *DiscoveryScraper) getEmbedListingDetails(embedURL string) (string, string, error) {
+	ds.logger.Info("getting embed listing details", slog.String("url", embedURL))
 	req, err := http.NewRequest("GET", embedURL, nil)
 	if err != nil {
 		return "", "", err
@@ -233,7 +234,6 @@ func (ds *DiscoveryScraper) getEmbedListingDetails(embedURL string) (string, str
 	req.Header.Set("User-Agent", "Mozilla/5.0 (X11; Linux x86_64; rv:138.0) Gecko/20100101 Firefox/138.0")
 	req.Header.Set("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
 	req.Header.Set("Accept-Language", "en-US,en;q=0.5")
-	// req.Header.Set("Accept-Encoding", "gzip, deflate, br, zstd")
 	req.Header.Set("Referer", "https://www.google.com/")
 	req.Header.Set("Connection", "keep-alive")
 	req.Header.Set("Upgrade-Insecure-Requests", "1")
@@ -247,6 +247,7 @@ func (ds *DiscoveryScraper) getEmbedListingDetails(embedURL string) (string, str
 	req.Header.Set("Pragma", "no-cache")
 	req.Header.Set("Cache-Control", "no-cache")
 	req.Header.Set("TE", "trailers")
+
 	resp, err := ds.client.Do(req)
 	if err != nil {
 		return "", "", errors.Wrap(err, "doRequest")
@@ -266,6 +267,7 @@ func (ds *DiscoveryScraper) getEmbedListingDetails(embedURL string) (string, str
 	if !found {
 		return "", "", fmt.Errorf("embed job url not found")
 	}
+	// convert the url to a *url.URL so we can get the path
 	parsedJobURL, err := url.Parse(actualJobURL)
 	if err != nil {
 		return "", "", errors.Wrap(err, fmt.Sprintf("parsing %s", actualJobURL))
@@ -276,6 +278,7 @@ func (ds *DiscoveryScraper) getEmbedListingDetails(embedURL string) (string, str
 	}
 	companyName := paths[1]
 
+	// greenhouse stores some information about the company in a json object in the page
 	var appDetails embedAppJSONResponse
 	rawAppJSON := doc.Find("script[type='application/ld+json']").Text()
 	if err := json.Unmarshal([]byte(rawAppJSON), &appDetails); err != nil {
@@ -288,15 +291,15 @@ func (ds *DiscoveryScraper) getEmbedListingDetails(embedURL string) (string, str
 }
 
 // get the fancy formatted company name via an api call
-func getFormattedCompanyName(companyName string) (string, error) {
-	log.Printf("getting formatted name for %s", companyName)
+func (ds *DiscoveryScraper) getFormattedCompanyName(companyName string) (string, error) {
+	ds.logger.Info("getting formatted company name", slog.String("company", companyName))
 	resp, err := http.Get("https://boards-api.greenhouse.io/v1/boards/" + companyName)
 	if err != nil {
 		return "", err
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != 200 {
-		return "", fmt.Errorf("get company name: non-200 error code: %d", resp.StatusCode)
+		return "", fmt.Errorf("non-200 error code: %d", resp.StatusCode)
 	}
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
@@ -304,7 +307,7 @@ func getFormattedCompanyName(companyName string) (string, error) {
 	}
 	var responseBody companyNameResponse
 	if err := json.Unmarshal(body, &responseBody); err != nil {
-		return "", err
+		return "", errors.Wrap(err, "unmarshal json")
 	}
 	return responseBody.Name, nil
 }
