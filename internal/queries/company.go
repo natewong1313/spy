@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/natewong1313/spy/internal/errors"
 	"github.com/natewong1313/spy/internal/models"
 )
@@ -13,12 +14,12 @@ const (
 	VALUES (@name, @platform_type, @platform_url, @created_at, @greenhouse_name)
 	ON CONFLICT (name) DO UPDATE SET greenhouse_name=EXCLUDED.greenhouse_name, platform_type=EXCLUDED.platform_type, platform_url=EXCLUDED.platform_url;`
 	GetCompaniesQuery           = `SELECT * FROM company LIMIT $1 OFFSET $2;`
-	GetGreenhouseCompaniesQuery = `SELECT * FROM company WHERE greenhouse_name <> '' LIMIT $1 OFFSET $2;`
+	GetGreenhouseCompaniesQuery = `SELECT * FROM company WHERE platform_type='greenhouse' LIMIT $1 OFFSET $2;`
 	NewCompanyQuery             = "INSERT INTO company (name, platform_type, platform_url, created_at, greenhouse_name) VALUES ($1, $2, $3, $4, $5);"
 	GetCompanyByNameQuery       = "SELECT * FROM company WHERE name=$1;"
 )
 
-func AddCompanies(companies []models.Company, db *pgx.Conn) error {
+func AddCompanies(companies []models.Company, db *pgxpool.Conn) error {
 	batch := &pgx.Batch{}
 	for _, company := range companies {
 		args := pgx.NamedArgs{
@@ -42,7 +43,7 @@ func AddCompanies(companies []models.Company, db *pgx.Conn) error {
 	return nil
 }
 
-func GetPaginatedGreenhouseCompanies(page, limit int, db *pgx.Conn) ([]models.Company, error) {
+func GetPaginatedGreenhouseCompanies(page, limit int, db *pgxpool.Conn) ([]models.Company, error) {
 	var companies []models.Company
 	offset := (page - 1) * limit
 	rows, err := db.Query(context.Background(), GetGreenhouseCompaniesQuery, limit, offset)
@@ -60,7 +61,7 @@ func GetPaginatedGreenhouseCompanies(page, limit int, db *pgx.Conn) ([]models.Co
 	return companies, nil
 }
 
-func GetPaginatedCompanies(page, limit int, db *pgx.Conn) ([]models.Company, error) {
+func GetPaginatedCompanies(page, limit int, db *pgxpool.Conn) ([]models.Company, error) {
 	var companies []models.Company
 	offset := (page - 1) * limit
 	rows, err := db.Query(context.Background(), GetCompaniesQuery, limit, offset)
@@ -78,12 +79,12 @@ func GetPaginatedCompanies(page, limit int, db *pgx.Conn) ([]models.Company, err
 	return companies, nil
 }
 
-func NewCompany(company models.Company, db *pgx.Conn) error {
+func NewCompany(company models.Company, db *pgxpool.Conn) error {
 	_, err := db.Exec(context.Background(), NewCompanyQuery, company.Name, company.PlatformType, company.PlatformURL, company.CreatedAt, company.GreenhouseName)
 	return err
 }
 
-func GetCompanyByName(name string, db *pgx.Conn) (models.Company, error) {
+func GetCompanyByName(name string, db *pgxpool.Conn) (models.Company, error) {
 	row := db.QueryRow(context.Background(), GetCompanyByNameQuery, name)
 	return scanCompany(row)
 }

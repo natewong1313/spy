@@ -5,6 +5,7 @@ import (
 	"log"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/natewong1313/spy/internal/errors"
 	"github.com/natewong1313/spy/internal/models"
 )
@@ -17,7 +18,7 @@ const (
 )
 
 // adds new jobs to the database, updates existing, and deletes invalid ones
-func AddJobs(jobs []models.Job, db *pgx.Conn) error {
+func AddJobs(jobs []models.Job, db *pgxpool.Conn) error {
 	if len(jobs) == 0 {
 		return nil
 	}
