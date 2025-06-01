@@ -23,7 +23,7 @@ type JobsScraper struct {
 
 func NewJobsScraper(company models.Company) *JobsScraper {
 	attrs := []slog.Attr{
-		slog.String("site", "greenhouse"),
+		slog.String("site", "ashby"),
 		slog.String("service", "jobs"),
 		slog.String("company", company.Name),
 	}
@@ -44,6 +44,7 @@ func (js *JobsScraper) Start() (jobs []models.Job, err error) {
 }
 
 func (js *JobsScraper) getJobsData() (jobs []models.Job, err error) {
+	fmt.Println(js.company.AshbyName)
 	req, err := http.NewRequest("GET", "https://api.ashbyhq.com/posting-api/job-board/"+js.company.AshbyName, nil)
 	if err != nil {
 		return jobs, errors.Wrap(err, "build request")
@@ -68,6 +69,8 @@ func (js *JobsScraper) getJobsData() (jobs []models.Job, err error) {
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != 200 {
+		body, _ := io.ReadAll(resp.Body)
+		fmt.Println(string(body))
 		return jobs, fmt.Errorf("non 200 status code: %d", resp.StatusCode)
 	}
 	bodyText, err := io.ReadAll(resp.Body)

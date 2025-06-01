@@ -9,7 +9,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/PuerkitoBio/goquery"
 	"github.com/natewong1313/spy/internal/errors"
 	"github.com/natewong1313/spy/internal/models"
 	"github.com/natewong1313/spy/scrapers/shared"
@@ -64,64 +63,36 @@ func getQueryURL() string {
 	return fmt.Sprintf("https://www.google.com/search?q=site:jobs.ashbyhq.com+after:%d-%02d-%d", weekAgo.Year(), weekAgo.Month(), weekAgo.Day())
 }
 
+func (ds *DiscoveryScraper) parseURLFromGoogle(rawURL string) (string, string, error) {
+	// /url?q=https://jobs.ashbyhq.com/deel&sa=U&ved=2ahUKEwjX74-d2MGNAxVMrlYBHdYBJa8QFnoECAoQAg&usg=AOvVaw0fUhN8Sn7WsaR0H_BOIUGy
+	hrefURL, err := url.Parse(rawURL)
+	if err != nil {
+		return "", "", errors.Wrap(err, fmt.Sprintf("unexpected url parse err for url %s", rawURL))
+	}
+	// /Silver/889efaa9-316e-48be-91ed-09d32962027d&sa=U&ved=2ahUKEwjX74-d2MGNAxVMrlYBHdYBJa8Q0gJ6BAgEEAU&usg=AOvVaw37rQ22obXsWEB8Qk86sTPc
+	paths := strings.Split(hrefURL.Path, "/")
+	if len(paths) < 1 {
+		return "", "", fmt.Errorf("unexpected path length for %s", hrefURL.Path)
+	}
+	// strip params, edge case for some urls
+	companyName := strings.Split(paths[1], "&")[0]
+	companyName, _ = url.QueryUnescape(companyName)
+	// no better way of doing this atm
+	formattedCompanyName := cases.Title(language.English).String(companyName)
+	ds.logger.Info("discovered " + formattedCompanyName)
+	return companyName, formattedCompanyName, nil
+}
+
 func (ds *DiscoveryScraper) getGoogleSearchResults() (companies []models.Company, err error) {
 	ds.logger.Info("fetching search results", slog.String("url", ds.googleQueryURL))
 
-	resp, err := shared.DoGoogleSearchRequest(ds.googleQueryURL, ds.client)
-	if err != nil {
-		return companies, err
+	args := shared.GoogleDiscoveryArgs{
+		QueryURL:     ds.googleQueryURL,
+		PlatformType: "ashby",
+		Client:       ds.client,
+		ParseURLFunc: ds.parseURLFromGoogle,
 	}
-	defer resp.Body.Close()
-
-	doc, err := goquery.NewDocumentFromReader(resp.Body)
-	if err != nil {
-		return companies, errors.Wrap(err, "NewDocumentFromReader")
-	}
-
-	container := doc.Find("body div:nth-child(1)")
-	searchResults := container.Find("a").Nodes
-
-	// iterate through all search results
-	for _, searchResult := range searchResults {
-		// parse href
-		var href string
-		for _, attr := range searchResult.Attr {
-			if attr.Key == "href" {
-				href = attr.Val
-				break
-			}
-		}
-		if !strings.HasPrefix(href, "/url?q=https://jobs.ashbyhq.com") {
-			continue
-		}
-		href = strings.Split(href, "/url?q=")[1]
-		// /url?q=https://jobs.ashbyhq.com/deel&sa=U&ved=2ahUKEwjX74-d2MGNAxVMrlYBHdYBJa8QFnoECAoQAg&usg=AOvVaw0fUhN8Sn7WsaR0H_BOIUGy
-		hrefURL, err := url.Parse(href)
-		if err != nil {
-			ds.logger.Error("unexpected url parse err", slog.Any("err", err), slog.String("url", href))
-			continue
-		}
-		// /Silver/889efaa9-316e-48be-91ed-09d32962027d&sa=U&ved=2ahUKEwjX74-d2MGNAxVMrlYBHdYBJa8Q0gJ6BAgEEAU&usg=AOvVaw37rQ22obXsWEB8Qk86sTPc
-		paths := strings.Split(hrefURL.Path, "/")
-		if len(paths) < 1 {
-			ds.logger.Error("unexpected path length", slog.String("path", hrefURL.Path))
-			continue
-		}
-		// strip params, edge case for some urls
-		companyName := strings.Split(paths[1], "&")[0]
-		// no better way of doing this atm
-		formattedCompanyName := cases.Title(language.English).String(companyName)
-		ds.logger.Info("discovered " + formattedCompanyName)
-
-		company := models.Company{
-			Name:         formattedCompanyName,
-			PlatformType: "ashby",
-			PlatformURL:  "",
-			CreatedAt:    time.Now(),
-			AshbyName:    companyName,
-		}
-		companies = append(companies, company)
-	}
-
-	return companies, nil
+	companies, nextQueryURL, err := shared.DoGoogleCompanyDiscovery(args)
+	ds.googleQueryURL = nextQueryURL
+	return companies, err
 }

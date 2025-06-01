@@ -13,14 +13,14 @@ import (
 
 func Start(dbPool *pgxpool.Pool) {
 	attrs := []slog.Attr{
-		slog.String("site", "greenhouse"),
+		slog.String("site", "ashby"),
 		slog.String("service", "master"),
 	}
 	handler := slog.NewTextHandler(os.Stdout, nil).WithAttrs(attrs)
 	logger := slog.New(handler)
 
-	// first search for any new companies
-	companies, err := NewDiscoveryScraper().Start()
+	// first search for any new newCompanies
+	newCompanies, err := NewDiscoveryScraper().Start()
 	if err != nil {
 		logger.Error("discovery scraper err", slog.Any("err", err))
 		// dont return for now
@@ -34,11 +34,11 @@ func Start(dbPool *pgxpool.Pool) {
 	defer dbConn.Release()
 
 	// add the companies we just found
-	if err := queries.AddCompanies(companies, dbConn); err != nil {
+	if err := queries.AddCompanies(newCompanies, dbConn); err != nil {
 		logger.Error("add companies", slog.Any("err", err))
 		return
 	} else {
-		logger.Info(fmt.Sprintf("added %d companies", len(companies)))
+		logger.Info(fmt.Sprintf("added %d companies", len(newCompanies)))
 	}
 
 	// work through companies in batches
@@ -58,6 +58,8 @@ func Start(dbPool *pgxpool.Pool) {
 		}
 		page++
 	}
+
+	fmt.Println("scraping companies ", len(allCompanies))
 
 	for _, company := range allCompanies {
 		jobs, err := NewJobsScraper(company).Start()

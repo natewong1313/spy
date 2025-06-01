@@ -20,9 +20,10 @@ import (
 )
 
 type DiscoveryScraper struct {
-	logger         *slog.Logger
-	client         *http.Client
-	googleQueryURL string
+	logger                 *slog.Logger
+	client                 *http.Client
+	googleQueryURL         string
+	discoveredCompanyNames map[string]bool
 }
 
 func NewDiscoveryScraper() *DiscoveryScraper {
@@ -33,7 +34,7 @@ func NewDiscoveryScraper() *DiscoveryScraper {
 	handler := slog.NewTextHandler(os.Stdout, nil).WithAttrs(attrs)
 	logger := slog.New(handler)
 
-	return &DiscoveryScraper{logger: logger, client: &http.Client{}, googleQueryURL: getQueryURL()}
+	return &DiscoveryScraper{logger: logger, client: &http.Client{}, googleQueryURL: getQueryURL(), discoveredCompanyNames: make(map[string]bool)}
 }
 
 func (ds *DiscoveryScraper) Start() (totalCompanies []models.Company, err error) {
@@ -61,88 +62,54 @@ func getQueryURL() string {
 	return fmt.Sprintf("https://www.google.com/search?q=site:boards.greenhouse.io+after:%d-%02d-%d", weekAgo.Year(), weekAgo.Month(), weekAgo.Day())
 }
 
+func (ds *DiscoveryScraper) parseURLFromGoogle(rawURL string) (string, string, error) {
+	// /url?q=https://boards.greenhouse.io/cialfo&sa=U&ved=2ahUKEwj27LPx-r6NAxUm48kDHd3uOXYQFnoECAMQAg&usg=AOvVaw0LIFj2cF-uYpWMcHetb8ei
+	hrefURL, err := url.Parse(rawURL)
+	if err != nil {
+		return "", "", errors.Wrap(err, fmt.Sprintf("unexpected url parse err for url %s", rawURL))
+	}
+	// /coupang/jobs/6536235&sa=U&ved=2ahUKEwiIyszA_76NAxXQgFYBHfs1CTwQFnoECAoQAg&usg=AOvVaw33QLvcRWHJXhHWdKAkF_Ii
+	paths := strings.Split(hrefURL.Path, "/")
+	if len(paths) < 1 {
+		return "", "", fmt.Errorf("unexpected path length for %s", hrefURL.Path)
+	}
+	// strip params, edge case for some urls
+	companyName := strings.Split(paths[1], "&")[0]
+	companyName, _ = url.QueryUnescape(companyName)
+
+	var formattedCompanyName string
+	if companyName == "embed" {
+		decodedURL, _ := url.QueryUnescape(rawURL)
+		companyName, formattedCompanyName, err = ds.getEmbedListingDetails(decodedURL)
+		if err != nil {
+			return "", "", errors.Wrap(err, "getEmbedListingDetails")
+		}
+	} else {
+		// if we previously discovered this company, don't bother with making an
+		// extra http request
+		if _, found := ds.discoveredCompanyNames[companyName]; found {
+			return "", "", fmt.Errorf("company previously discovered")
+		}
+		formattedCompanyName, err = ds.getFormattedCompanyName(companyName)
+		if err != nil {
+			return "", "", errors.Wrap(err, "getFormattedCompanyName")
+		}
+	}
+	ds.logger.Info("discovered " + formattedCompanyName)
+	return companyName, formattedCompanyName, nil
+}
+
 func (ds *DiscoveryScraper) getGoogleSearchResults() (companies []models.Company, err error) {
 	ds.logger.Info("fetching search results", slog.String("url", ds.googleQueryURL))
-
-	resp, err := shared.DoGoogleSearchRequest(ds.googleQueryURL, ds.client)
-	if err != nil {
-		return companies, err
+	args := shared.GoogleDiscoveryArgs{
+		QueryURL:     ds.googleQueryURL,
+		PlatformType: "greenhouse",
+		Client:       ds.client,
+		ParseURLFunc: ds.parseURLFromGoogle,
 	}
-	defer resp.Body.Close()
-
-	doc, err := goquery.NewDocumentFromReader(resp.Body)
-	if err != nil {
-		return companies, errors.Wrap(err, "NewDocumentFromReader")
-	}
-
-	container := doc.Find("body div:nth-child(1)")
-	searchResults := container.Find("a").Nodes
-	// iterate through all search results
-	for _, searchResult := range searchResults {
-		// parse href
-		var href string
-		for _, attr := range searchResult.Attr {
-			if attr.Key == "href" {
-				href = attr.Val
-				break
-			}
-		}
-		if !strings.HasPrefix(href, "/url?q=https://boards.greenhouse.io") {
-			continue
-		}
-		href = strings.Split(href, "/url?q=")[1]
-		// /url?q=https://boards.greenhouse.io/cialfo&sa=U&ved=2ahUKEwj27LPx-r6NAxUm48kDHd3uOXYQFnoECAMQAg&usg=AOvVaw0LIFj2cF-uYpWMcHetb8ei
-		hrefURL, err := url.Parse(href)
-		if err != nil {
-			ds.logger.Error("unexpected url parse err", slog.Any("err", err), slog.String("url", href))
-			continue
-		}
-		// /coupang/jobs/6536235&sa=U&ved=2ahUKEwiIyszA_76NAxXQgFYBHfs1CTwQFnoECAoQAg&usg=AOvVaw33QLvcRWHJXhHWdKAkF_Ii
-		paths := strings.Split(hrefURL.Path, "/")
-		if len(paths) < 1 {
-			ds.logger.Error("unexpected path length", slog.String("path", hrefURL.Path))
-			continue
-		}
-		// strip params, edge case for some urls
-		companyName := strings.Split(paths[1], "&")[0]
-		var formattedCompanyName string
-		if companyName == "embed" {
-			decodedURL, _ := url.QueryUnescape(href)
-			companyName, formattedCompanyName, err = ds.getEmbedListingDetails(decodedURL)
-			if err != nil {
-				ds.logger.Error("getEmbedListingDetails", slog.Any("err", err))
-				continue
-			}
-		} else {
-			formattedCompanyName, err = ds.getFormattedCompanyName(companyName)
-			if err != nil {
-				ds.logger.Error("getFormattedCompanyName", slog.Any("err", err))
-				continue
-			}
-		}
-		ds.logger.Info("discovered " + formattedCompanyName)
-
-		company := models.Company{
-			Name:           formattedCompanyName,
-			PlatformType:   "greenhouse",
-			PlatformURL:    "",
-			CreatedAt:      time.Now(),
-			GreenhouseName: companyName,
-		}
-		companies = append(companies, company)
-	}
-	nextURL, err := parsePageButtons(doc)
-	if err != nil {
-		return companies, errors.Wrap(err, "parsePageButtons")
-	}
-
-	// end of results
-	if nextURL == "#" {
-		ds.googleQueryURL = ""
-	} else {
-		ds.googleQueryURL = "https://www.google.com" + nextURL
-	}
-	return companies, nil
+	companies, nextQueryURL, err := shared.DoGoogleCompanyDiscovery(args)
+	ds.googleQueryURL = nextQueryURL
+	return companies, err
 }
 
 // some search results show up as embeds so we need to go on the page itself to get the company name
@@ -208,7 +175,6 @@ func (ds *DiscoveryScraper) getEmbedListingDetails(embedURL string) (string, str
 	formattedCompanyName := appDetails.HiringOrganization.Name
 
 	return companyName, formattedCompanyName, nil
-
 }
 
 // get the fancy formatted company name via an api call
@@ -231,29 +197,4 @@ func (ds *DiscoveryScraper) getFormattedCompanyName(companyName string) (string,
 		return "", errors.Wrap(err, "unmarshal json")
 	}
 	return responseBody.Name, nil
-}
-
-// check if we can navigate to another page
-func parsePageButtons(doc *goquery.Document) (string, error) {
-	children := doc.Find("body").Children()
-	table := children.Closest("table")
-	td := table.Find("td")
-	switch len(td.Nodes) {
-	// first page
-	case 1:
-		nextURL, found := td.Find("a").Attr("href")
-		if !found {
-			return "", fmt.Errorf("failed to find next page url on first page")
-		}
-		return nextURL, nil
-	// back and forward buttons
-	case 5:
-		nextURL, found := table.Find("td:nth-child(4)").Find("a").Attr("href")
-		if !found {
-			return "", fmt.Errorf("failed to find next page url")
-		}
-		return nextURL, nil
-
-	}
-	return "", fmt.Errorf("unknown nodes length: %d", len(td.Nodes))
 }
